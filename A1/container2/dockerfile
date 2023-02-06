@@ -1,0 +1,12 @@
+FROM python:3.12.0a4-bullseye
+
+# VOLUME ["/a1_container2_b00914336"]
+WORKDIR /container2
+
+COPY requirements.txt .
+RUN pip3 install -r ./requirements.txt
+# COPY /sharedFiles2/container2/container2.py .
+COPY . /container2
+
+CMD ["python3", "container2.py"]
+EXPOSE 9000
