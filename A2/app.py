@@ -5,15 +5,11 @@ import requests
 import pathlib
 import os
 import boto3
+from awsconfig import getSession
 
 app = Flask(__name__)
-aws_access_key_id = "ASIASLYVERDY7D6WD3G5"
-aws_secret_access_key = "c14QUkGc4HfyvMZSU62Tl4BHQk7BRcGI/EOIn0U4"
-aws_session_token = "FwoGZXIvYXdzECMaDNhRcVpiepBj3O03TiLAATKZFydzeURXG/xEJou8XzyIkq85UJaolmDpWSh8hojAetAlO9VzdGgBoHLQd6x/cAcrp1BmV0hk2UaH1HP6puWMH9shzJBrKgLVlrfWVpLcpdfjOFnNyeOpPv27OTMMi85OWDvM5D7fLUTFrA3BK/asxrU9rQmD88G1JAH4QAlp/hAUtsP0cHPH9NTFLpmSg01TuMhatqg06rfZYXOtT7CE+GQ8M4CVf5iPSwSPidesyWXh/Q5AsKJ4q8Fii/skkij01M6fBjItn6Bw+akKjS8HBNQf8zx+qwJ/duUlQqjh3i44ujW9zHaG7Kbfi0hs1Xrr6SO+"
-region_name = 'us-east-1'
 FILE_NAME = 'profData.txt'
 BUCKET_NAME = 'csci5409-assignment2'
-
 
 @app.route('/', methods = ['GET'])
 def baseRoute():
@@ -34,12 +30,7 @@ def storeDataToS3():
         response["error"] = "Invalid JSON input."
         return response
     
-    session = boto3.Session(
-        aws_access_key_id = "ASIASLYVERDY7D6WD3G5",
-        aws_secret_access_key = "c14QUkGc4HfyvMZSU62Tl4BHQk7BRcGI/EOIn0U4",
-        aws_session_token = "FwoGZXIvYXdzECMaDNhRcVpiepBj3O03TiLAATKZFydzeURXG/xEJou8XzyIkq85UJaolmDpWSh8hojAetAlO9VzdGgBoHLQd6x/cAcrp1BmV0hk2UaH1HP6puWMH9shzJBrKgLVlrfWVpLcpdfjOFnNyeOpPv27OTMMi85OWDvM5D7fLUTFrA3BK/asxrU9rQmD88G1JAH4QAlp/hAUtsP0cHPH9NTFLpmSg01TuMhatqg06rfZYXOtT7CE+GQ8M4CVf5iPSwSPidesyWXh/Q5AsKJ4q8Fii/skkij01M6fBjItn6Bw+akKjS8HBNQf8zx+qwJ/duUlQqjh3i44ujW9zHaG7Kbfi0hs1Xrr6SO+",
-        region_name = 'us-east-1'
-        )
+    session = getSession()
     s3 = session.client("s3")
     
     f = open("profData.txt", "w")
@@ -68,12 +59,7 @@ def appenddataToS3File():
         response["error"] = "Invalid JSON input."
         return response
 
-    session = boto3.Session(
-        aws_access_key_id = "ASIASLYVERDY7D6WD3G5",
-        aws_secret_access_key = "c14QUkGc4HfyvMZSU62Tl4BHQk7BRcGI/EOIn0U4",
-        aws_session_token = "FwoGZXIvYXdzECMaDNhRcVpiepBj3O03TiLAATKZFydzeURXG/xEJou8XzyIkq85UJaolmDpWSh8hojAetAlO9VzdGgBoHLQd6x/cAcrp1BmV0hk2UaH1HP6puWMH9shzJBrKgLVlrfWVpLcpdfjOFnNyeOpPv27OTMMi85OWDvM5D7fLUTFrA3BK/asxrU9rQmD88G1JAH4QAlp/hAUtsP0cHPH9NTFLpmSg01TuMhatqg06rfZYXOtT7CE+GQ8M4CVf5iPSwSPidesyWXh/Q5AsKJ4q8Fii/skkij01M6fBjItn6Bw+akKjS8HBNQf8zx+qwJ/duUlQqjh3i44ujW9zHaG7Kbfi0hs1Xrr6SO+",
-        region_name = 'us-east-1'
-        )
+    session = getSession()
     appendData = content['data']
 
     s3 = session.resource("s3")
@@ -108,12 +94,7 @@ def deleteS3File():
         response["error"] = "Invalid JSON input."
         return response
 
-    session = boto3.Session(
-        aws_access_key_id = "ASIASLYVERDY7D6WD3G5",
-        aws_secret_access_key = "c14QUkGc4HfyvMZSU62Tl4BHQk7BRcGI/EOIn0U4",
-        aws_session_token = "FwoGZXIvYXdzECMaDNhRcVpiepBj3O03TiLAATKZFydzeURXG/xEJou8XzyIkq85UJaolmDpWSh8hojAetAlO9VzdGgBoHLQd6x/cAcrp1BmV0hk2UaH1HP6puWMH9shzJBrKgLVlrfWVpLcpdfjOFnNyeOpPv27OTMMi85OWDvM5D7fLUTFrA3BK/asxrU9rQmD88G1JAH4QAlp/hAUtsP0cHPH9NTFLpmSg01TuMhatqg06rfZYXOtT7CE+GQ8M4CVf5iPSwSPidesyWXh/Q5AsKJ4q8Fii/skkij01M6fBjItn6Bw+akKjS8HBNQf8zx+qwJ/duUlQqjh3i44ujW9zHaG7Kbfi0hs1Xrr6SO+",
-        region_name = 'us-east-1'
-        )
+    session = getSession()
 
     fileURL = content['s3uri']
     s3 = session.resource('s3')
@@ -124,6 +105,5 @@ def deleteS3File():
     
 # https://csci5409-assignment2.s3.amazonaws.com/profData.txt
 
-if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=80)
-
+# if __name__ == '__main__':
+#     app.run(host="0.0.0.0", port=80)
