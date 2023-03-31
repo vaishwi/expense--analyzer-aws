@@ -1,0 +1,55 @@
+{
+    "Comment": "A description of my state machine",
+    "StartAt": "CONNECT?",
+    "States": {
+      "CONNECT?": {
+        "Type": "Choice",
+        "Choices": [
+          {
+            "Variable": "$.type",
+            "StringEquals": "CONNECT",
+            "Next": "SQS SendMessage (1)"
+          }
+        ],
+        "Default": "SUBCRIBE?"
+      },
+      "SUBCRIBE?": {
+        "Type": "Choice",
+        "Choices": [
+          {
+            "Variable": "$.type",
+            "StringEquals": "SUBSCRIBE",
+            "Next": "SQS SendMessage (2)"
+          }
+        ],
+        "Default": "SQS SendMessage"
+      },
+      "SQS SendMessage (2)": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::sqs:sendMessage",
+        "Parameters": {
+          "MessageBody.$": "$",
+          "QueueUrl": "https://sqs.us-east-1.amazonaws.com/162716223729/SUBSCRIBE"
+        },
+        "End": true
+      },
+      "SQS SendMessage (1)": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::sqs:sendMessage",
+        "Parameters": {
+          "QueueUrl": "https://sqs.us-east-1.amazonaws.com/162716223729/CONNECT",
+          "MessageBody.$": "$"
+        },
+        "End": true
+      },
+      "SQS SendMessage": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::sqs:sendMessage",
+        "Parameters": {
+          "QueueUrl": "https://sqs.us-east-1.amazonaws.com/162716223729/PUBLISH",
+          "MessageBody.$": "$"
+        },
+        "End": true
+      }
+    }
+  }
