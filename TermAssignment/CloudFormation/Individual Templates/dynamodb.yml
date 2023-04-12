@@ -1,0 +1,27 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  DynamoTableName:
+    Type: String
+    Default: 'receipt_extraction_data'
+Resources:  
+  DDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref DynamoTableName
+      AttributeDefinitions:
+        -
+          AttributeName: "analyzeId"
+          AttributeType: "S"
+        -
+          AttributeName: "userEmail"
+          AttributeType: "S"
+      KeySchema:
+        -
+          AttributeName: "analyzeId"
+          KeyType: "HASH"
+        -
+          AttributeName: "userEmail"
+          KeyType: "RANGE"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5

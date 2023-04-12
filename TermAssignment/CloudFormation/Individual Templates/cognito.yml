@@ -1,0 +1,58 @@
+# https://www.stephengream.com/http-gateway-with-cognito
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  CognitoServicePrefix:
+    Type: String
+
+Resources:
+  UserPool:
+    Type: 'AWS::Cognito::UserPool'
+    Properties:
+      UsernameConfiguration:
+        CaseSensitive: true
+      AutoVerifiedAttributes:
+        - email
+      UserPoolName: !Sub ${CognitoServicePrefix}-UserPool
+      UsernameAttributes: 
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_LINK
+        EmailMessageByLink: 'Please click the link below to verify your email address. {##Verify Email##}'
+      Policies:
+        PasswordPolicy:
+          RequireLowercase: true
+          RequireSymbols: false
+          RequireNumbers: true
+          MinimumLength: 6
+          RequireUppercase: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AccessTokenValidity: 1
+      TokenValidityUnits: days
+      UserPoolId: !Ref UserPool
+      TokenValidityUnits:
+        AccessToken: days
+      SupportedIdentityProviders:
+        - COGNITO
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoServicePrefix
+      UserPoolId: !Ref UserPool
+      
+
+Outputs:
+  CognitoUserPoolID:
+    Value: !Ref UserPool
+    Description: The UserPool ID
+  CognitoAppClientID:
+    Value: !Ref UserPoolClient
+    Description: The app client

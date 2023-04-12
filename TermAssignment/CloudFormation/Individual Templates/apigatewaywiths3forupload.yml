@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Serverless patterns - Amazon API Gateway REST API with S3 integration
+Outputs:
+  AppApiEndpoint:
+    Description: API Endpoint
+    Value: !Sub 'https://${AppApi}.execute-api.${AWS::Region}.amazonaws.com/Prod'
+Resources:
+  AppApi:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: apigw-s3-proxy
+      Description: S3 integraton REST API demo
+      BinaryMediaTypes:
+        - image/jpeg
+        - image/png
+        - image/jpg
+  ResourceFolder:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref AppApi
+      ParentId: !GetAtt AppApi.RootResourceId
+      PathPart: '{bucket}'
+  ResourceItem:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref AppApi
+      ParentId: !Ref ResourceFolder
+      PathPart: '{fileName}'
+  ItemMethodPut:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      RestApiId: !Ref AppApi
+      ResourceId: !Ref ResourceItem
+      HttpMethod: PUT
+      AuthorizationType: None
+      RequestParameters:
+        method.request.path.fileName: true
+        method.request.path.bucket: true
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: PUT
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{fileName}'
+        Credentials: 'arn:aws:iam::162716223729:role/LabRole'
+        IntegrationResponses:
+          - StatusCode: 200
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestParameters:
+          integration.request.path.bucket: method.request.path.bucket
+          integration.request.path.fileName: method.request.path.fileName
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+  OptionsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      RestApiId: !Ref AppApi
+      ResourceId: !Ref ResourceItem
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'OPTIONS,PUT'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+          ResponseTemplates:
+            application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+  Deployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    DependsOn:
+      - ItemMethodPut
+    Properties:
+      RestApiId: !Ref AppApi
+  Stage:
+    Type: 'AWS::ApiGateway::Stage'
+    Properties:
+      StageName: Prod
+      RestApiId: !Ref AppApi
+      DeploymentId: !Ref Deployment

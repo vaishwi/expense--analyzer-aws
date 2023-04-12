@@ -1,0 +1,507 @@
+# https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-lambda-function-environment.html
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  LambdaFunctionName:
+    Type: String
+    Default: try_function
+  APIName:
+    Type: String
+    Default: expense
+  EnvironmentName:
+    Type: String
+    Default: Prod
+  BucketName:
+    Type: String
+    Default: expense-project
+  TableName:
+    Type: String
+    Default: receipt_extraction_data
+  FetchHistoryLambdaFunctionName:
+    Type: String
+    Default: fetch_history
+  APIFetchHistoryPathPart:
+    Type: String
+    Default: fetchhistory
+
+  ReceiptAnalyzerLambdaFunctionName:
+    Type: String
+    Default: receipt_analyzer
+  APIReceiptAnalyzerPathPart:
+    Type: String
+    Default: analyzereceipt
+
+  S3UplaodLambdaFunctionName:
+    Type: String
+    Default: s3_uplaod
+  APIS3UploadPathPart:
+    Type: String
+    Default: uploadimage
+
+Resources:
+  APIGateWayRestApi:
+    Type: "AWS::ApiGateway::RestApi"
+    Properties:
+      Name: !Ref APIName
+
+  APIGatewayFetchHistoryResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref APIGateWayRestApi
+      ParentId: !GetAtt
+        - APIGateWayRestApi
+        - RootResourceId
+      PathPart:
+        Ref: APIFetchHistoryPathPart
+    DependsOn:
+      - APIGateWayRestApi
+
+  APIGatewayFetchHistoryMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref APIGateWayRestApi
+      ResourceId: !Ref APIGatewayFetchHistoryResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: 200
+      Integration:
+        Type: AWS
+        IntegrationResponses:
+          - StatusCode: 200
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - >-
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFuncNameArn}/invocations
+          - LambdaFuncNameArn: !GetAtt FetchHistoryLambdaFunction.Arn
+    DependsOn:
+      - APIGatewayFetchHistoryResource
+
+  APIGatewayDeployment:
+    Type: "AWS::ApiGateway::Deployment"
+    Properties:
+      RestApiId: !Ref APIGateWayRestApi
+      StageName:
+        Ref: EnvironmentName
+    DependsOn:
+      - APIGatewayFetchHistoryMethod
+      - APIGatewayS3UploadMethod
+      - APIGatewayReceiptAnalyzerMethod
+
+
+
+  FetchHistoryLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Runtime: "python3.9"
+      Role: "arn:aws:iam::162716223729:role/LabRole"
+      Code:
+        ZipFile: |
+          import json
+          import base64
+          import boto3
+          import os
+
+          dyn_client = boto3.client('dynamodb')
+
+          # TABLE_NAME = "receipt_extraction_data"
+          # BUCKET_NAME = "expense-project"
+          TABLE_NAME = os.environ['TABLE_NAME']
+          BUCKET_NAME =os.environ['BUCKET_NAME']
+
+          def convert_dynamoStrDict_to_dict(dynamoDict):
+            responseDict = {}
+            
+            for key in dynamoDict.keys():
+                responseDict[key] = dynamoDict[key]['S']
+            return responseDict
+
+          def get_base64_image_data_from_s3(fileName):
+              s3 = boto3.resource('s3')
+              bucket = s3.Bucket(BUCKET_NAME)
+              obj = bucket.Object(key = fileName)      #pass your image Name to key
+              response = obj.get()     #get Response
+              img = response[u'Body'].read()        # Read the respone, you can also print it.
+              #print(type(img))                      # Just getting type.
+              myObj = [base64.b64encode(img)] 
+              print(myObj)
+              return myObj
+
+          def convert_dynamoData_str(history_records):
+              output_records = []
+              for record in history_records:
+                items = record['Items']['L']
+                newItems = []  
+                for item in items:
+                  item = item['M']
+                  newItems.append(convert_dynamoStrDict_to_dict(item))
+              
+                record.pop('Items')
+                print(record)
+                responseDict = convert_dynamoStrDict_to_dict(record)
+                responseDict['items'] = newItems
+                print(responseDict)
+                responseDict['image'] = get_base64_image_data_from_s3(responseDict['fileName'])
+                responseDict['fileName'] = responseDict['fileName'].split("/")[1]
+                print(responseDict)
+                output_records.append(responseDict)
+              return output_records
+
+
+
+          def getHistoryFromDatabase(userEmail):
+              
+              history = dyn_client.scan(TableName=TABLE_NAME, FilterExpression='userEmail = :userEmail',
+                                      ExpressionAttributeValues={
+                                          ':userEmail': {'S': userEmail}
+                                      })
+
+              return history
+
+          def lambda_handler(event, context):
+              # TODO implement
+              userEmail = event["userEmail"]
+              history = getHistoryFromDatabase(userEmail)
+              print(history)
+              
+              if(history['Count']==0):
+                  response = []
+              else:
+                  history_records = history['Items']
+                  response = convert_dynamoData_str(history_records)
+              
+              return {
+                  'statusCode': 200,
+                  'history': response
+              }
+
+      FunctionName:
+        Ref: FetchHistoryLambdaFunctionName
+      Handler: index.lambda_handler
+      
+      Timeout: 300
+      Description: Invoke a function during stack creation.
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+          TABLE_NAME: !Ref TableName
+      TracingConfig:
+        Mode: Active
+    DependsOn:
+      - APIGateWayRestApi
+
+  APIGatewayReceiptAnalyzerResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref APIGateWayRestApi
+      ParentId: !GetAtt
+        - APIGateWayRestApi
+        - RootResourceId
+      PathPart:
+        Ref: APIReceiptAnalyzerPathPart
+    DependsOn:
+      - APIGateWayRestApi
+
+  APIGatewayReceiptAnalyzerMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref APIGateWayRestApi
+      ResourceId: !Ref APIGatewayReceiptAnalyzerResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: 200
+      Integration:
+        Type: AWS
+        IntegrationResponses:
+          - StatusCode: 200
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - >-
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFuncNameArn}/invocations
+          - LambdaFuncNameArn: !GetAtt ReceiptAnalyzerLambdaFunction.Arn
+    DependsOn:
+      - APIGatewayReceiptAnalyzerResource
+
+  ReceiptAnalyzerLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Runtime: "python3.9"
+      Role: "arn:aws:iam::162716223729:role/LabRole"
+      Code:
+        ZipFile: |
+          import boto3
+          import io
+          from urllib.parse import unquote_plus
+          import json
+          import uuid
+          import base64
+          import os
+
+          dyn_client = boto3.client('dynamodb')
+          # TABLE_NAME = "receipt_extraction_data"
+          TABLE_NAME = os.environ['TABLE_NAME']
+          BUCKET_NAME =os.environ['BUCKET_NAME']
+          # Takes a field as an argument and prints out the detected labels and values
+          def print_labels_and_values(field):
+              # Only if labels are detected and returned
+              value  = field['ValueDetection']['Text']
+              value = value.replace("\n"," ")
+              print(field['Type']['Text']+" - "+value)
+
+          def get_summary_fields(summary_fields, keys):
+              outputDict = {}
+              for key in keys:
+                  outputDict[key] = ""
+              for summary_field in summary_fields:
+                  
+                  # print_labels_and_values(summary_field)
+                  value  = summary_field['ValueDetection']['Text']
+                  value = value.replace("\n"," ")
+                  key = summary_field['Type']['Text'].upper()
+                  result = keys.count(key)
+                  if key in keys:
+                      outputDict[key] = value
+                  print()
+              return outputDict
+              
+              
+          def get_purchase_items(line_item_groups):
+              items = []
+              distinctItemKeys = []
+              for line_item_group in line_item_groups:
+                  tempItem = {}
+                  
+                  for line_items in line_item_group["LineItems"]:
+                      
+                      print(line_items)
+                      for expense_fields in line_items["LineItemExpenseFields"]:
+                          
+                          value  = expense_fields['ValueDetection']['Text']
+                          value = value.replace("\n"," ")
+                          key = expense_fields['Type']['Text'].upper()
+                          if ( (key != "EXPENSE_ROW") & (len(distinctItemKeys)==0)):
+                              distinctItemKeys.append(key)
+                          if(key=="EXPENSE_ROW"):
+                              print("In expense row")
+                              continue
+                          if(key in distinctItemKeys):
+                              items.append(tempItem)
+                              tempItem={}
+                          else:
+                              tempItem[key]=value
+                              
+              return items
+              
+          def convert_string_attr_dynamo_attr(input_dict):
+              dynamoData = {}
+              for key in input_dict:
+                  print(key)
+                  dynamoData[key] = {'S': input_dict[key]}
+              return dynamoData
+
+          def convert_list_attr_dynamo_map(input_list_dict_ele):
+              dynamoItems = []
+              for item in input_list_dict_ele:
+                  print(item)
+                  dynamoItem = convert_string_attr_dynamo_attr(item)
+                  dynamoItems.append({'M':dynamoItem})
+              
+              dynamoItems = {'L': dynamoItems}
+              return dynamoItems
+              
+
+          def process_expense_analysis(bucket,file_name,client):
+              print("In side analysis")
+              
+              
+            
+              print(file_name)
+              
+              # Analyze document
+              # process using S3 object
+              response = client.analyze_expense(
+                  Document={'S3Object': {'Bucket': bucket, 'Name': file_name}})
+              
+              return response["ExpenseDocuments"]
+
+          def lambda_handler(event,context):
+              
+              print("Hureeeee in lambda")
+              client = boto3.client('textract')
+
+              
+              # bucket = event['bucket']
+              userEmail = event['userEmail']
+              file_name =userEmail+"/"+ event['file_name']
+              
+              s3_client = boto3.client('s3')
+              
+              response = process_expense_analysis(BUCKET_NAME,file_name,client)
+              
+              # print(response)
+              outputDict = {}
+              outputDict["ITEMS"] =[]
+              
+              keys = ["ADDRESS","STREET","CITY","STATE","ZIP_CODE","NAME","VENDER_PHONE","DATE","TOTAL","DISCOUNT","TAX"]
+
+              # response = event 
+              response = response[0]
+              summary_fields = response["SummaryFields"]
+              line_items_groups = response["LineItemGroups"]
+              outputDict = get_summary_fields(summary_fields, keys)
+
+              print("Line Item Groups")
+              items=get_purchase_items(line_items_groups)
+              
+              dynamoData = convert_string_attr_dynamo_attr(outputDict)
+              
+              dynamoData["analyzeId"]= {'S': str(uuid.uuid4())}
+              dynamoData["userEmail"]= {'S': userEmail}
+              dynamoData["fileName"]= {'S': file_name}
+
+              dynamoData['Items'] = convert_list_attr_dynamo_map(items[1:])
+            
+
+              response = dyn_client.put_item(TableName=TABLE_NAME, Item=dynamoData)
+              outputDict['items'] = items[1:]
+              
+              return outputDict
+
+
+      FunctionName:
+        Ref: ReceiptAnalyzerLambdaFunctionName
+      Handler: index.lambda_handler
+      Timeout: 300
+      Description: Function to extract and analyze receipt.
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+          TABLE_NAME: !Ref TableName
+      TracingConfig:
+        Mode: Active
+    DependsOn:
+      - APIGateWayRestApi
+
+
+  APIGatewayS3UploadResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      RestApiId: !Ref APIGateWayRestApi
+      ParentId: !GetAtt
+        - APIGateWayRestApi
+        - RootResourceId
+      PathPart:
+        Ref: APIS3UploadPathPart
+    DependsOn:
+      - APIGateWayRestApi
+
+  APIGatewayS3UploadMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      RestApiId: !Ref APIGateWayRestApi
+      ResourceId: !Ref APIGatewayS3UploadResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      MethodResponses:
+        - StatusCode: 200
+      Integration:
+        Type: AWS
+        IntegrationResponses:
+          - StatusCode: 200
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - >-
+            arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFuncNameArn}/invocations
+          - LambdaFuncNameArn: !GetAtt S3UploadLambdaFunction.Arn
+    DependsOn:
+      - APIGatewayS3UploadResource
+
+  S3UploadLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Runtime: "python3.9"
+      Role: "arn:aws:iam::162716223729:role/LabRole"
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import base64
+          import os
+
+          BUCKET_NAME =os.environ['BUCKET_NAME']
+          def lambda_handler(event, context):
+              print(event)
+              encoded_data = event['imageData']
+              # bucket = event['bucket']
+              userEmail = event['userEmail']
+              file_name = event['file_name']
+              
+              if("data" in encoded_data):
+                  encoded_data = encoded_data.split(",")[1]
+
+              
+              #decode base64 string data
+              decoded_data=base64.b64decode((encoded_data))
+              
+              file_name = userEmail+"/"+file_name
+              
+              
+              s3 = boto3.resource('s3')
+              obj = s3.Object(BUCKET_NAME,file_name)
+              obj.put(Body=base64.b64decode(encoded_data))
+              
+              # TODO implement
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('Successfully stored.')
+              }
+
+
+
+      FunctionName:
+        Ref: S3UplaodLambdaFunctionName
+      Handler: index.lambda_handler
+      
+      Timeout: 300
+      Description: Function to uplaod image to s3 bucket.
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+      TracingConfig:
+        Mode: Active
+    DependsOn:
+      - APIGateWayRestApi
+  
+  APIGatewayFetchHistoryPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt FetchHistoryLambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+    DependsOn:
+      - APIGatewayDeployment
+
+  APIGatewayReceiptAnalyzePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt ReceiptAnalyzerLambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+    DependsOn:
+      - APIGatewayDeployment
+
+  APIGatewayS3UploadPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt S3UploadLambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+    DependsOn:
+      - APIGatewayDeployment
+  
+Outputs:
+  ProdDataEndpoint:
+    Description: "API Prod stage endpoint"
+    Value: !Sub "https://${APIGateWayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}/"
+

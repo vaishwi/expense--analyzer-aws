@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  InstanceTypeParameter:
+    Description: Select instance type # Optional
+    Type: String
+    Default: t2.small
+    AllowedValues: # User will get dropdown to select the below options
+        - t2.micro
+        - m1.small
+        - m1.large
+        - t2.small
+    Description: Enter t2.micro, m1.small or m1.large. Default is t2.micro. # Optional
+
+  KeyName:
+    Default: sentimentRSA
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+
+  # EC2: for deploying frontend REACT through Docker
+  Ec2Instance: # Logical ID/Name
+    Type: AWS::EC2::Instance # Type
+    Properties:
+      InstanceType: !Ref InstanceTypeParameter
+      ImageId: ami-06e46074ae430fba6
+    #   KeyName: vaishwiA2
+      KeyName: !Ref 'KeyName'
+      SecurityGroups: 
+        - !Ref InstanceSSHSecurityGroup
+        - !Ref InstanceHttpSecurityGroup
+        - !Ref InstancePortSecurityGroup
+
+      # Executing Commands when EC2 instance 
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            sudo su
+            yum install git -y
+            git clone https://github.com/arpitpatel1501/sentiment-analysis.git
+            cd sentiment-analysis/
+            pwd
+            rm .env
+
+            echo REACT_APP_API_LINK="https://xqp7wu6kz9.execute-api.us-east-1.amazonaws.com/test/" > .env
+            echo REACT_APP_CLIENT_ID="18rkn8elq63bur8p3n23pmopqb" >> .env
+            echo REACT_APP_USERPOOL_ID="us-east-1_FjbPch0mq" >> .env
+            echo REACT_APP_S3_UPLOAD_PATH="uploadimage" >> .env
+            echo REACT_APP_RECEIPT_ANALYZE_PATH="analyzereceipt" >> .env
+            echo REACT_APP_FETCH_HISTORY_PATH="fetchhistory" >> .env
+            yum install nodejs -y
+            yum install npm -y
+            echo "Vaishwi- install node and npm"
+            npm install
+            echo "Vaishwi-  npm install complete"
+            npm run start&
+            echo "Vaishwi-  npm start complete"
+      Tags:
+        - Key: Name
+          Value: sentiment-ec2-cloudformation-test
+      
+  InstanceSSHSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties: 
+      GroupDescription: Enable SSH access via port 22
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+  
+  InstanceHttpSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties: 
+      GroupDescription: Enable Http access via port 80
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  InstancePortSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties: 
+      GroupDescription: Enable Https access via port 3000
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+
+Outputs: 
+  WebUri:
+    Description: This is running server uri
+    Value: !Join
+      - ''
+      - - 'http://'
+        - !GetAtt
+          - Ec2Instance
+          - PublicDnsName
+        - ':3000'
